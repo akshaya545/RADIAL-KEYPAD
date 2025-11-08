@@ -1,0 +1,214 @@
+<!doctype html>
+<!--
+Radial / quarter-circle keypad (single-file)
+Save this as radial-keypad.html and open in VS Code or a browser.
+Click letters to type into the display. Hover to see highlight.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radial Quarter-Keypad</title>
+  <style>
+    :root{ --size:720px; --stroke:#111; --fill:#fff; --accent:#f1f5f9 }
+    body{ font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial; display:flex; gap:24px; align-items:flex-start; padding:30px; background: #fafafa; }
+    .wrap{ display:flex; gap:24px; align-items:flex-start }
+    .panel{ width:var(--size); height:var(--size); background:transparent; }
+    .display { width:360px; padding:18px; border-radius:10px; background:white; box-shadow:0 6px 18px rgba(16,24,40,0.06); border:1px solid #e6e9ef}
+    .screen { font-size:22px; padding:14px; border-radius:8px; border:1px dashed #ddd; min-height:60px; background: #fff }
+    .controls{ margin-top:12px; display:flex; gap:8px; }
+    button.small{ padding:10px 14px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer }
+    svg{ overflow: visible }
+    .key{ stroke:var(--stroke); stroke-width:3; fill:var(--fill); cursor:pointer; transition:transform .12s ease, fill .12s ease }
+    .key:hover{ transform: translateY(-4px); fill:var(--accent); }
+    .key text{ pointer-events:none; user-select:none; font-size:22px }
+    .special text{ font-size:16px }
+    .hint{ color:#666; font-size:13px; margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <svg id="pad" class="panel" viewBox="0 0 720 720"></svg>
+
+    <div class="display">
+      <div style="font-weight:600; margin-bottom:8px">Input</div>
+      <div id="screen" class="screen"></div>
+      <div class="controls">
+        <button class="small" id="clear">Clear</button>
+        <button class="small" id="back">Backspace</button>
+        <button class="small" id="shift">Shift</button>
+        <button class="small" id="numbers">123</button>
+      </div>
+      <div class="hint">Click any key on the quarter-circle keypad to type. Resize the window to scale.</div>
+    </div>
+  </div>
+
+<script>
+// KEY ARRANGEMENT (outer -> inner). These arrays reflect the image provided.
+const rings = [
+  ['Q','W','E','R','T','Y','U','I','O','P'],         // outermost
+  ['A','S','D','F','G','H','J','K','L'],            // middle
+  ['Z','X','C','V','B','N','M']                     // inner
+];
+
+const size = 720;              // svg size
+const cx = size/2;
+const cy = size/2;
+const svg = document.getElementById('pad');
+svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+
+// sector spans 90 degrees in the top-left quarter: from 180deg to 270deg
+const sectorStart = 180; // degrees
+const sectorSpan = 90;   // degrees
+
+// radii (outermost to innermost). We'll leave a center hole for special keys.
+const outerMost = 320;
+const ringWidth = 80; // radial thickness of each ring
+
+// draw rings programmatically
+function polarToCartesian(r, angleDeg){
+  const a = (angleDeg-90) * Math.PI/180.0; // svg arc math offset
+  return [cx + r*Math.cos(a), cy + r*Math.sin(a)];
+}
+
+function arcPath(r1, r2, a1, a2){
+  // returns path for a segment between radii r1->r2 and angles a1->a2 (degrees)
+  const [x1,y1] = polarToCartesian(r2, a1);
+  const [x2,y2] = polarToCartesian(r2, a2);
+  const [x3,y3] = polarToCartesian(r1, a2);
+  const [x4,y4] = polarToCartesian(r1, a1);
+  const largeArc = (a2 - a1) > 180 ? 1 : 0;
+  // path: move to outer arc start -> arc outer -> line to inner arc end -> arc inner back -> close
+  return `M ${x1} ${y1} A ${r2} ${r2} 0 ${largeArc} 1 ${x2} ${y2} L ${x3} ${y3} A ${r1} ${r1} 0 ${largeArc} 0 ${x4} ${y4} Z`;
+}
+
+// container group for keys
+const keysGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+svg.appendChild(keysGroup);
+
+rings.forEach((ring, ringIndex) =>{
+  const rOuter = outerMost - ringIndex*ringWidth;
+  const rInner = rOuter - ringWidth + 2; // small overlap so borders look neat
+  const n = ring.length;
+  const step = sectorSpan / n;
+  ring.forEach((label, i)=>{
+    const a1 = sectorStart + i*step;
+    const a2 = sectorStart + (i+1)*step;
+    const pathD = arcPath(rInner, rOuter, a1, a2);
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', pathD);
+    path.setAttribute('class','key');
+    path.setAttribute('data-label', label);
+    keysGroup.appendChild(path);
+
+    // add text for the label
+    const midAngle = a1 + (a2-a1)/2;
+    const midR = (rInner + rOuter)/2;
+    const [tx, ty] = polarToCartesian(midR, midAngle);
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', tx);
+    t.setAttribute('y', ty + 8); // small vertical tweak
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('dominant-baseline','middle');
+    t.textContent = label;
+    keysGroup.appendChild(t);
+  });
+});
+
+// draw the inner circle area (special keys)
+const centerR = outerMost - rings.length*ringWidth - 8;
+const innerGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+svg.appendChild(innerGroup);
+
+// create three center segments for special keys (example layout approximated)
+const specials = [
+  {label:'↑', id:'shift'},
+  {label:'123', id:'numbers'},
+  {label:'⌫', id:'back'}
+];
+
+const spCount = specials.length;
+const spStep = sectorSpan / spCount;
+for(let i=0;i<spCount;i++){
+  const a1 = sectorStart + i*spStep;
+  const a2 = sectorStart + (i+1)*spStep;
+  const pathD = arcPath(12, centerR, a1, a2);
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d', pathD);
+  path.setAttribute('class','key special');
+  path.setAttribute('data-label', specials[i].label);
+  path.setAttribute('data-id', specials[i].id);
+  innerGroup.appendChild(path);
+
+  const midAngle = a1 + (a2-a1)/2;
+  const midR = (12 + centerR)/2;
+  const [tx, ty] = polarToCartesian(midR, midAngle);
+  const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+  t.setAttribute('x', tx);
+  t.setAttribute('y', ty + 6);
+  t.setAttribute('text-anchor','middle');
+  t.setAttribute('dominant-baseline','middle');
+  t.textContent = specials[i].label;
+  innerGroup.appendChild(t);
+}
+
+// add a small globe/back-left symbol at the very corner (a small circle)
+const corner = document.createElementNS('http://www.w3.org/2000/svg','circle');
+corner.setAttribute('cx', 40);
+corner.setAttribute('cy', 40);
+corner.setAttribute('r', 28);
+corner.setAttribute('fill','#fff');
+corner.setAttribute('stroke', '#111');
+corner.setAttribute('stroke-width','3');
+svg.appendChild(corner);
+const globe = document.createElementNS('http://www.w3.org/2000/svg','text');
+globe.setAttribute('x', 40);
+globe.setAttribute('y', 46);
+globe.setAttribute('text-anchor','middle');
+globe.textContent = '🌐';
+svg.appendChild(globe);
+
+// attach click handlers
+const screen = document.getElementById('screen');
+let isShift = false;
+
+svg.addEventListener('click', (e)=>{
+  const target = e.target;
+  if(target && target.classList && target.classList.contains('key')){
+    const label = target.getAttribute('data-label');
+    const id = target.getAttribute('data-id');
+    if(id === 'back' || label === '⌫'){
+      screen.textContent = screen.textContent.slice(0,-1);
+      return;
+    }
+    if(id === 'shift' || label === '↑'){
+      isShift = !isShift;
+      document.getElementById('shift').classList.toggle('active');
+      return;
+    }
+    if(id === 'numbers' || label === '123'){
+      // toggle number mode: simple example - replace letters with digits 1..9 on inner ring
+      alert('Numbers toggled (example)');
+      return;
+    }
+    // append label (apply shift state)
+    const out = isShift ? label.toUpperCase() : label.toLowerCase();
+    screen.textContent += out;
+  }
+});
+
+// wire control buttons
+document.getElementById('clear').addEventListener('click', ()=> screen.textContent = '');
+document.getElementById('back').addEventListener('click', ()=> screen.textContent = screen.textContent.slice(0,-1));
+document.getElementById('shift').addEventListener('click', ()=> isShift = !isShift);
+document.getElementById('numbers').addEventListener('click', ()=> alert('Numbers mode (not implemented)'));
+
+// responsive: scale svg to fit box while keeping viewBox
+function resize(){
+  // nothing required; the SVG uses viewBox — it will scale to its container. Keep container size fixed.
+}
+window.addEventListener('resize', resize);
+
+</script>
+</body>
+</html>
